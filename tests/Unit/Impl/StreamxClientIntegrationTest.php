@@ -2,13 +2,13 @@
 
 namespace Streamx\Clients\Ingestion\Tests\Unit\Impl;
 
+use DateTimeImmutable;
+use PHPUnit\Framework\Assert;
 use PHPUnit\Framework\TestCase;
 use Streamx\Clients\Ingestion\Builders\StreamxClientBuilders;
-use Streamx\Clients\Ingestion\Publisher\Message;
-use Streamx\Clients\Ingestion\Publisher\MessageStatus;
 use Streamx\Clients\Ingestion\Publisher\Publisher;
-use Streamx\Clients\Ingestion\StreamXClient;
-use Streamx\Clients\Ingestion\Tests\Testing\Model\Content;
+use Streamx\Clients\Ingestion\StreamxClient;
+use Streamx\Clients\Ingestion\Tests\Testing\Model\CloudEventUtils;
 use Streamx\Clients\Ingestion\Tests\Testing\Model\Page;
 
 /**
@@ -19,23 +19,10 @@ class StreamxClientIntegrationTest extends TestCase {
 
     private const INGESTION_BASE_URL = "http://localhost:8080";
     private const DELIVERY_BASE_URL = "http://localhost:8081";
-
-    private const PAGES_CHANNEL = "pages";
-    private const PAGE_SCHEMA_NAME = 'dev.streamx.blueprints.data.PageIngestionMessage';
-
-    private const PAGE_OBJECT_KEY = "page-object-key";
-    private const PAGE_ARRAY_KEY = "page-array-key";
-    private const MESSAGE_OBJECT_KEY = "message-object-key";
-    private const MESSAGE_OBJECT_WITH_PAGE_ARRAY_KEY = "message-object-with-page-array-key";
-    private const MULTIMESSAGE_PAGE_OBJECT_KEY = "multimessage-page-object-key";
-
-    private const CONTENT = "test content from php client";
     private const TIMEOUT_SECONDS = 3;
 
-    private static StreamXClient $client;
+    private static StreamxClient $client;
     private static Publisher $publisher;
-    private static Page $page;
-    private static array $pageArray;
 
     public static function setUpBeforeClass(): void {
         if (!self::isStreamxAvailable()) {
@@ -43,9 +30,7 @@ class StreamxClientIntegrationTest extends TestCase {
         }
 
         self::$client = StreamxClientBuilders::create(self::INGESTION_BASE_URL)->build();
-        self::$publisher = self::$client->newPublisher(self::PAGES_CHANNEL, self::PAGE_SCHEMA_NAME);
-        self::$page = new Page(new Content(self::CONTENT));
-        self::$pageArray = ['content' => ['bytes' => self::CONTENT]];
+        self::$publisher = self::$client->newPublisher();
     }
 
     private static function isStreamxAvailable(): bool {
@@ -64,100 +49,79 @@ class StreamxClientIntegrationTest extends TestCase {
     }
 
     /** @test */
-    public function shouldPublishAndUnpublishPageObject() {
-        $this->shouldPublishAndUnpublishPagePayload(
-            self::PAGE_OBJECT_KEY,
-            self::$page
-        );
+    public function shouldPublishAndUnpublishPageAsObject() {
+        $key = 'page-object-key';
+        $content = 'Test content from php client';
+        $page = new Page($content);
+
+        $pageObjectPublishEvent = CloudEventUtils::pagePublishEvent($key, $page, 10);
+        self::$publisher->send($pageObjectPublishEvent);
+        $this->assertPageIsPublished($pageObjectPublishEvent->getSubject(), $content);
+
+        $pageObjectUnpublishEvent = CloudEventUtils::pageUnpublishEvent($key, 11);
+        self::$publisher->send($pageObjectUnpublishEvent);
+        $this->assertPageIsUnpublished($pageObjectPublishEvent->getSubject());
     }
 
     /** @test */
-    public function shouldPublishAndUnpublishPageArray() {
-        $this->shouldPublishAndUnpublishPagePayload(
-            self::PAGE_ARRAY_KEY,
-            self::$pageArray
-        );
-    }
+    public function shouldPublishAndUnpublishPageAsArray() {
+        $key = 'page-array-key';
+        $content = 'Test content from php client';
+        $page = ['content' => base64_encode($content)];
 
-    private function shouldPublishAndUnpublishPagePayload($key, $pagePayload) {
-        self::$publisher->publish($key, $pagePayload);
-        $this->assertPageIsPublished($key);
+        $pageArrayPublishEvent = CloudEventUtils::pageArrayPublishEvent($key, $page, 20);
+        self::$publisher->send($pageArrayPublishEvent);
+        $this->assertPageIsPublished($pageArrayPublishEvent->getSubject(), $content);
 
-        self::$publisher->unpublish($key);
-        $this->assertPageIsUnpublished($key);
-    }
-
-    /** @test */
-    public function shouldPublishAndUnpublishMessageWithPageObject() {
-        $this->shouldPublishAndUnpublishPageMessage(
-            self::MESSAGE_OBJECT_KEY,
-            self::$page
-        );
+        $pageArrayUnpublishEvent = CloudEventUtils::pageUnpublishEvent($key, 21);
+        self::$publisher->send($pageArrayUnpublishEvent);
+        $this->assertPageIsUnpublished($pageArrayPublishEvent->getSubject());
     }
 
     /** @test */
-    public function shouldPublishAndUnpublishMessageWithPageArray() {
-        $this->shouldPublishAndUnpublishPageMessage(
-            self::MESSAGE_OBJECT_WITH_PAGE_ARRAY_KEY,
-            self::$pageArray
-        );
-    }
-
-    private function shouldPublishAndUnpublishPageMessage(string $key, $pagePayload) {
-        $message = (Message::newPublishMessage($key, $pagePayload))
-            ->withEventTime((int) (microtime(true) * 1000))
-            ->withProperties(['prop-1' => 'value-1', 'prop-2' => 'value-2'])
-            ->build();
-        self::$publisher->send($message);
-        $this->assertPageIsPublished($key);
-
-        $message = (Message::newUnpublishMessage($key))->build();
-        self::$publisher->send($message);
-        $this->assertPageIsUnpublished($key);
-    }
-
-    /** @test */
-    public function shouldPublishAndUnpublishMultiMessageRequest() {
+    public function shouldPublishAndUnpublishMultiEventRequest() {
+        $keyPrefix = "multievent-page-object-key";
         $keys = [];
         for ($i = 0; $i < 10; $i++) {
-            $keys[] = self::MULTIMESSAGE_PAGE_OBJECT_KEY . "_$i";
+            $keys[] = "$keyPrefix-$i";
         }
 
-        $this->verifyMultiMessagePublish($keys);
-        $this->verifyMultiMessageUnpublish($keys);
+        $this->verifyMultiEventPublish($keys);
+        $this->verifyMultiEventUnpublish($keys);
     }
 
-    private function verifyMultiMessagePublish(array $keys) {
+    private function verifyMultiEventPublish(array $keys) {
         // given
-        $messages = [];
+        $inputEvents = [];
         foreach ($keys as $key) {
-            $messages[] = Message::newPublishMessage($key, self::$pageArray)->build();
+            $page = new Page("Page with key $key");
+            $inputEvents[] = CloudEventUtils::pagePublishEvent($key, $page, 1);
         }
 
         // when
-        $results = self::$publisher->sendMulti($messages);
+        $resultEvents = self::$publisher->sendMulti($inputEvents);
 
         // then
-        $this->verifyStreamxResponse($keys, $results);
+        $this->verifyStreamxResponse($inputEvents, $resultEvents);
 
         // and
         foreach ($keys as $key) {
-            $this->assertPageIsPublished($key);
+            $this->assertPageIsPublished($key, "Page with key $key");
         }
     }
 
-    private function verifyMultiMessageUnpublish(array $keys) {
+    private function verifyMultiEventUnpublish(array $keys) {
         // given
-        $messages = [];
+        $inputEvents = [];
         foreach ($keys as $key) {
-            $messages[] = Message::newUnpublishMessage($key)->build();
+            $inputEvents[] = CloudEventUtils::pageUnpublishEvent($key, 1);
         }
 
         // when
-        $results = self::$publisher->sendMulti($messages);
+        $resultEvents = self::$publisher->sendMulti($inputEvents);
 
         // then
-        $this->verifyStreamxResponse($keys, $results);
+        $this->verifyStreamxResponse($inputEvents, $resultEvents);
 
         // and
         foreach ($keys as $key) {
@@ -165,25 +129,42 @@ class StreamxClientIntegrationTest extends TestCase {
         }
     }
 
-    private function verifyStreamxResponse(array $inputMessageKeys, array $ingestionEndpointResults): void {
-        $this->assertSameSize($inputMessageKeys, $ingestionEndpointResults);
-        for ($i = 0; $i < count($ingestionEndpointResults); $i++) {
-            $result = $ingestionEndpointResults[$i];
-            $this->assertInstanceOf(MessageStatus::class, $result);
-            $this->assertNotNull($result->getSuccess());
-            $this->assertEquals($inputMessageKeys[$i], $result->getSuccess()->getKey());
-            $this->assertIsInt($result->getSuccess()->getEventTime());
+    private function verifyStreamxResponse(array $inputEvents, array $resultEvents): void {
+        $this->assertSameSize($inputEvents, $resultEvents);
+        for ($i = 0; $i < count($inputEvents); $i++) {
+            $inputEvent = $inputEvents[$i];
+            $resultEvent = $resultEvents[$i];
+
+            Assert::assertNotEquals($inputEvent->getId(), $resultEvent->getId());
+            Assert::assertEquals('rest-ingestion', $resultEvent->getSource());
+            Assert::assertEquals('com.streamx.event.processing.success', $resultEvent->getType());
+            Assert::assertEquals(
+<<<JSON
+{
+    "specversion": "1.0",
+    "id": "id",
+    "source": "source",
+    "type": "{$inputEvent->getType()}",
+    "subject": "{$inputEvent->getSubject()}",
+    "time": "1970-01-01T00:00:01Z"
+}
+JSON, json_encode($resultEvent->getData(), JSON_PRETTY_PRINT));
+            Assert::assertEquals($inputEvent->getDataContentType(), $resultEvent->getDataContentType());
+            Assert::assertEquals($inputEvent->getDataSchema(), $resultEvent->getDataSchema());
+            Assert::assertEquals($inputEvent->getSubject(), $resultEvent->getSubject());
+            Assert::assertEquals((new DateTimeImmutable())->format('Y-m-d H:i:s'), $resultEvent->getTime()->format('Y-m-d H:i:s'));
+            Assert::assertEquals($inputEvent->getExtensions(), $resultEvent->getExtensions());
         }
     }
 
-    private function assertPageIsPublished(string $key) {
+    private function assertPageIsPublished(string $key, string $content) {
         $url = self::DELIVERY_BASE_URL . '/' . $key;
     
         $startTime = time();
         while (time() - $startTime < self::TIMEOUT_SECONDS) {
             $response = @file_get_contents($url);
             if ($response !== false) {
-                $this->assertEquals($response, self::CONTENT);
+                $this->assertEquals($response, $content);
                 return;
             }
             usleep(100000); // sleep for 100 milliseconds

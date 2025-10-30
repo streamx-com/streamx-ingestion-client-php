@@ -7,12 +7,13 @@ use GuzzleHttp\RequestOptions;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\StreamInterface;
 use Streamx\Clients\Ingestion\Builders\StreamxClientBuilders;
-use Streamx\Clients\Ingestion\Publisher\MessageStatus;
-use Streamx\Clients\Ingestion\Publisher\SuccessResult;
+use Streamx\Clients\Ingestion\Tests\Testing\CloudEventsComparator;
 use Streamx\Clients\Ingestion\Tests\Testing\Impl\CustomTestHttpRequester;
-use Streamx\Clients\Ingestion\Tests\Testing\Impl\CustomTestJsonProvider;
 use Streamx\Clients\Ingestion\Tests\Testing\MockServerTestCase;
+use Streamx\Clients\Ingestion\Tests\Testing\Model\CloudEventUtils;
+use Streamx\Clients\Ingestion\Tests\Testing\Model\Page;
 use Streamx\Clients\Ingestion\Tests\Testing\StreamxResponse;
+use Streamx\Clients\Ingestion\Utils\CloudEventsSerializer;
 
 class RestStreamxClientBuilderTest extends MockServerTestCase
 {
@@ -21,91 +22,86 @@ class RestStreamxClientBuilderTest extends MockServerTestCase
     public function shouldSetCustomIngestionEndpointUri()
     {
         // Given
-        $key = 'key';
-        $data = ['message' => 'test'];
+        $page = new Page('test');
+        $event = CloudEventUtils::pagePublishEvent('key', $page, 836383);
 
-        self::$server->setResponseOfPath('/custom-ingestion/v2/channels/pages/messages',
-            StreamxResponse::success(836383, $key));
+        self::$server->setResponseOfPath('/custom-ingestion/v1',
+            StreamxResponse::success($event));
 
         $this->client = StreamxClientBuilders::create(self::$server->getServerRoot())
-            ->setIngestionEndpointBasePath('/custom-ingestion/v2')
+            ->setIngestionEndpointPath('/custom-ingestion/v1')
             ->build();
 
         // When
-        $result = $this->createPagesPublisher()->publish($key, $data);
+        $result = $this->createPublisher()->send($event);
 
         // Then
         $this->assertIngestionRequest(self::$server->getLastRequest(),
-            '/custom-ingestion/v2/channels/pages/messages',
-            $this->defaultPublishMessageJson($key, '{"message":"test"}'));
+            '/custom-ingestion/v1',
+            [$event]);
 
-        $this->assertEquals(836383, $result->getEventTime());
-        $this->assertEquals($key, $result->getKey());
+        CloudEventsComparator::assertSameEvents($result, $event);
     }
 
     /** @test */
     public function shouldSetCustomHttpRequester()
     {
         // Given
-        $key = 'key';
-        $data = ['message' => 'custom requester'];
+        $page = new Page('custom requester');
+        $event = CloudEventUtils::pagePublishEvent('key', $page, 937493);
 
-        self::$server->setResponseOfPath('/custom-requester-ingestion/v1/channels/pages/messages',
-            StreamxResponse::success(937493, $key));
+        self::$server->setResponseOfPath('/custom-requester-ingestion/v1',
+            StreamxResponse::success($event));
 
         $this->client = StreamxClientBuilders::create(self::$server->getServerRoot())
             ->setHttpRequester(new CustomTestHttpRequester('/custom-requester-ingestion/v1'))
             ->build();
 
         // When
-        $result = $this->createPagesPublisher()->publish("key", $data);
+        $result = $this->createPublisher()->send($event);
 
         // Then
         $this->assertIngestionRequest(self::$server->getLastRequest(),
-            '/custom-requester-ingestion/v1/channels/pages/messages',
-            $this->defaultPublishMessageJson($key, '{"message":"custom requester"}'));
+            '/custom-requester-ingestion/v1',
+            [$event]);
 
-        $this->assertEquals(937493, $result->getEventTime());
-        $this->assertEquals($key, $result->getKey());
+        CloudEventsComparator::assertSameEvents($result, $event);
     }
 
     /** @test */
     public function shouldSetCustomHttpClient()
     {
         // Given
-        $url = self::$server->getServerRoot() . '/ingestion/v1/channels/pages/messages';
-        $key = 'key';
-        $data = ['message' => 'custom http client'];
-        $messageStatus = MessageStatus::ofSuccess(new SuccessResult(937493, $key));
-        $responseJson = json_encode($messageStatus);
+        $page = new Page('custom http client');
+        $event = CloudEventUtils::pagePublishEvent('key', $page, 937493);
+
+        $serializedEvents = CloudEventsSerializer::serialize([$event]);
+        $responseJson = $serializedEvents->getJson();
+        $contentType = $serializedEvents->getContentType();
 
         $responseBodyMock = $this->createMock(StreamInterface::class);
-        $responseBodyMock->method('eof')->willReturn(
-            false,
-            false,
-            true
-        );
-        $responseBodyMock->method('read')->willReturn(
-            substr($responseJson, 0, 15),
-            substr($responseJson, 15)
-        );
-    
+        $responseBodyMock->method('getContents')->willReturn($responseJson);
+
         $responseMock = $this->createMock(ResponseInterface::class);
         $responseMock->method('getStatusCode')->willReturn(202);
         $responseMock->method('getBody')->willReturn($responseBodyMock);
+        $responseMock->method('hasHeader')->with('Content-Type')->willReturn(true);
+        $responseMock->method('getHeader')->with('Content-Type')->willReturn([$contentType]);
 
         $clientMock = $this->createMock(Client::class);
-        $clientMock->method('request')->willReturnCallback(function($method, $uri, $options) use ($url, $responseMock)
+        $clientMock->method('request')->willReturnCallback(function($method, $uri, $options) use ($contentType, $responseMock)
         {
             $options = [
                 'http' => [
                     'method'  => $method,
-                    'header'  => "Content-Type: application/json; charset=UTF-8\r\nX-StreamX: Custom http client",
+                    'header'  => "Content-Type: $contentType\r\nX-StreamX: Custom http client",
                     'content' => $options[RequestOptions::BODY],
                 ],
             ];
 
             $context = stream_context_create($options);
+
+            $url = self::$server->getServerRoot() . '/ingestion/v2/cloudevents';
             file_get_contents($url, false, $context); // perform the HTTP POST request
 
             return $responseMock;
@@ -116,41 +112,14 @@ class RestStreamxClientBuilderTest extends MockServerTestCase
             ->build();
 
         // When
-        $result = $this->createPagesPublisher()->publish($key, $data);
+        $result = $this->createPublisher()->send($event);
 
         // Then
         $this->assertIngestionRequest(self::$server->getLastRequest(),
-            '/ingestion/v1/channels/pages/messages',
-            $this->defaultPublishMessageJson($key, '{"message":"custom http client"}'),
+            '/ingestion/v2/cloudevents',
+            [$event],
             ['X-StreamX' => 'Custom http client']);
 
-        $this->assertEquals(937493, $result->getEventTime());
-        $this->assertEquals($key, $result->getKey());
-    }
-
-    /** @test */
-    public function shouldSetCustomJsonProvider()
-    {
-        // Given
-        $key = 'key';
-        $data = ['property' => 'original'];
-
-        self::$server->setResponseOfPath('/ingestion/v1/channels/pages/messages',
-            StreamxResponse::success(625436, $key));
-
-        $this->client = StreamxClientBuilders::create(self::$server->getServerRoot())
-            ->setJsonProvider(new CustomTestJsonProvider('Added by custom Json Provider'))
-            ->build();
-
-        // When
-        $result = $this->createPagesPublisher()->publish("key", $data);
-
-        // Then
-        $this->assertIngestionRequest(self::$server->getLastRequest(),
-            '/ingestion/v1/channels/pages/messages',
-            $this->defaultPublishMessageJson($key, '{"property":"original","customProperty":"Added by custom Json Provider"}'));
-
-        $this->assertEquals(625436, $result->getEventTime());
-        $this->assertEquals($key, $result->getKey());
+        CloudEventsComparator::assertSameEvents($result, $event);
     }
 }

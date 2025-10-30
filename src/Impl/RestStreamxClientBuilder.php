@@ -2,29 +2,31 @@
 
 namespace Streamx\Clients\Ingestion\Impl;
 
+use Exception;
+use GuzzleHttp\Psr7\Uri;
 use Psr\Http\Client\ClientInterface;
+use Psr\Http\Message\UriInterface;
+use Streamx\Clients\Ingestion\Exceptions\StreamxClientException;
 use Streamx\Clients\Ingestion\Publisher\HttpRequester;
-use Streamx\Clients\Ingestion\Publisher\JsonProvider;
 use Streamx\Clients\Ingestion\StreamxClient;
 use Streamx\Clients\Ingestion\StreamxClientBuilder;
 
 class RestStreamxClientBuilder implements StreamxClientBuilder
 {
     private string $serverUrl;
-    private ?string $ingestionEndpointBasePath = null;
+    private ?string $ingestionEndpointPath = null;
     private ?string $authToken = null;
     private ?HttpRequester $httpRequester = null;
     private ?ClientInterface $httpClient = null;
-    private ?JsonProvider $jsonProvider = null;
 
     public function __construct(string $serverUrl)
     {
         $this->serverUrl = $serverUrl;
     }
 
-    public function setIngestionEndpointBasePath(string $ingestionEndpointBasePath): StreamxClientBuilder
+    public function setIngestionEndpointPath(string $ingestionEndpointPath): StreamxClientBuilder
     {
-        $this->ingestionEndpointBasePath = $ingestionEndpointBasePath;
+        $this->ingestionEndpointPath = $ingestionEndpointPath;
         return $this;
     }
 
@@ -46,25 +48,18 @@ class RestStreamxClientBuilder implements StreamxClientBuilder
         return $this;
     }
 
-    public function setJsonProvider(JsonProvider $jsonProvider): StreamxClientBuilder
-    {
-        $this->jsonProvider = $jsonProvider;
-        return $this;
-    }
-
     public function build(): StreamxClient
     {
         $this->ensureIngestionEndpointUri();
         $this->ensureHttpRequester();
-        $this->ensureJsonProvider();
-        return new RestStreamxClient($this->serverUrl, $this->ingestionEndpointBasePath,
-            $this->authToken, $this->httpRequester, $this->jsonProvider);
+        $ingestionEndpointUri = self::buildAbsoluteUri($this->serverUrl, $this->ingestionEndpointPath);
+        return new RestStreamxClient($ingestionEndpointUri, $this->authToken, $this->httpRequester);
     }
 
     private function ensureIngestionEndpointUri(): void
     {
-        if ($this->ingestionEndpointBasePath == null) {
-            $this->ingestionEndpointBasePath = StreamxClient::INGESTION_ENDPOINT_BASE_PATH;
+        if ($this->ingestionEndpointPath == null) {
+            $this->ingestionEndpointPath = StreamxClient::INGESTION_ENDPOINT_PATH;
         }
     }
 
@@ -79,10 +74,18 @@ class RestStreamxClientBuilder implements StreamxClientBuilder
         }
     }
 
-    private function ensureJsonProvider(): void
+    private static function buildAbsoluteUri(string $serverUrl, string $ingestionEndpointPath): UriInterface
     {
-        if ($this->jsonProvider == null) {
-            $this->jsonProvider = new DefaultJsonProvider();
+        $uriString = $serverUrl . $ingestionEndpointPath;
+        try {
+            $uri = new Uri($uriString);
+        } catch (Exception $ex) {
+            throw new StreamxClientException("Ingestion endpoint URI: $uriString is malformed. " . $ex->getMessage(), $ex);
         }
+
+        if (empty($uri->getScheme())) {
+            throw new StreamxClientException("Ingestion endpoint URI: $uriString is malformed. Relative URI is not supported.");
+        }
+        return $uri;
     }
 }

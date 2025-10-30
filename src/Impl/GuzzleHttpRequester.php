@@ -2,6 +2,8 @@
 
 namespace Streamx\Clients\Ingestion\Impl;
 
+use CloudEvents\V1\CloudEventInterface;
+use Exception;
 use GuzzleHttp\Client as GuzzleHttpClient;
 use GuzzleHttp\RequestOptions;
 use Psr\Http\Client\ClientExceptionInterface;
@@ -9,15 +11,12 @@ use Psr\Http\Client\ClientInterface;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\UriInterface;
 use Streamx\Clients\Ingestion\Exceptions\StreamxClientException;
-use Streamx\Clients\Ingestion\Exceptions\StreamxClientExceptionFactory;
-use Streamx\Clients\Ingestion\Impl\Utils\DataValidationException;
-use Streamx\Clients\Ingestion\Impl\Utils\MultipleJsonsSplitter;
-use Streamx\Clients\Ingestion\Publisher\FailureResponse;
 use Streamx\Clients\Ingestion\Publisher\HttpRequester;
-use Streamx\Clients\Ingestion\Publisher\MessageStatus;
+use Streamx\Clients\Ingestion\Utils\CloudEventsSerializer;
 
 class GuzzleHttpRequester implements HttpRequester
 {
+    private const CONTENT_TYPE_HEADER = 'Content-Type';
 
     private ClientInterface $httpClient;
 
@@ -26,12 +25,15 @@ class GuzzleHttpRequester implements HttpRequester
         $this->httpClient = $httpClient ?? new GuzzleHttpClient();
     }
 
-    public function performIngestion(UriInterface $endpointUri, array $headers, string $json, array $additionalRequestOptions = []): array {
+    public function post(UriInterface $endpointUri, array $headers, array $cloudEvents, array $additionalRequestOptions = []): array {
         try {
+            $serializedEvents =  CloudEventsSerializer::serialize($cloudEvents);
+            $headers = array_merge($headers, [self::CONTENT_TYPE_HEADER => $serializedEvents->getContentType()]);
+
             $requestOptions = array_merge(
                 [
                     RequestOptions::HEADERS => $headers,
-                    RequestOptions::BODY => $json,
+                    RequestOptions::BODY => $serializedEvents->getJson(),
                     RequestOptions::HTTP_ERRORS => false
                 ],
                 $additionalRequestOptions
@@ -47,113 +49,64 @@ class GuzzleHttpRequester implements HttpRequester
     }
 
     /**
-     * @return MessageStatus[]
+     * @return CloudEventInterface[]
      * @throws StreamxClientException
      */
     private function handleIngestionResponse(ResponseInterface $response): array
     {
         $statusCode = $response->getStatusCode();
+        $contentType = $this->getContentType($response);
+        $responseBody = $this->getResponseBody($response, $statusCode);
+        $responseText = str_contains($contentType, "text/plain") ? $responseBody : '';
+        $responseEvents = $this->getResponseEvents($responseBody, $contentType, $statusCode);
 
         switch ($statusCode) {
             case 202:
-                return $this->parseStreamedMessageStatuses($response);
+            {
+                if (empty($responseEvents)) {
+                    throw new StreamxClientException("Success response contains no response events");
+                }
+                return $responseEvents;
+            }
+            case 400:
+                throw new StreamxClientException("Bad request. $responseText");
             case 401:
-                throw $this->createAuthenticationException();
-            case in_array($statusCode, [400, 403, 500]):
-                $failureResponse = $this->parseFailureResponse($response);
-                throw $this->streamxClientExceptionFrom($failureResponse);
+                throw new StreamxClientException('Authentication failed. Make sure that the given token is valid.');
+            case 403:
+                throw new StreamxClientException("Forbidden. $responseText");
+            case 500:
+                throw new StreamxClientException("Unexpected server error. $responseText", null, $responseEvents);
+            case 503:
+                throw new StreamxClientException("Service unavailable. $responseText");
             default:
-                throw $this->createGenericCommunicationException($response);
+                throw new StreamxClientException("Communication error. Response status: $statusCode. Message: " . $response->getReasonPhrase());
         }
     }
 
-    /**
-     * @return MessageStatus[] array
-     * @throws StreamxClientException
-     */
-    private function parseStreamedMessageStatuses(ResponseInterface $response): array
-    {
-        $jsonObjects = $this->parseStreamedResponseToJsonObjects($response);
-        $messageStatuses = [];
-
-        foreach ($jsonObjects as $jsonObject) {
-            $messageStatuses[] = MessageStatus::fromJson($jsonObject);
-        }
-
-        return $messageStatuses;
+    private static function getContentType(ResponseInterface $response): string {
+        return $response->hasHeader(self::CONTENT_TYPE_HEADER)
+            ? $response->getHeader(self::CONTENT_TYPE_HEADER)[0]
+            : '';
     }
 
-    /**
-     * @throws StreamxClientException
-     */
-    private function parseFailureResponse(ResponseInterface $response): FailureResponse
-    {
+    private static function getResponseBody(ResponseInterface $response, int $statusCode): string {
         try {
-            $jsonString = (string)$response->getBody();
-            $jsonObject = $this->parseToJsonObject($jsonString, $response);
-            return FailureResponse::fromJson($jsonObject);
-        } catch (DataValidationException $e) {
-            throw new StreamxClientException(sprintf('Communication error. Response status: %s. Message: %s',
-                $response->getStatusCode(), $e->getMessage()));
+            return $response->getBody()->getContents();
+        } catch (Exception $ex) {
+            throw new StreamxClientException("Response could not be read. Response status: $statusCode", $ex);
         }
     }
 
     /**
-     * @throws StreamxClientException
+     * @return CloudEventInterface[]
      */
-    private function parseStreamedResponseToJsonObjects(ResponseInterface $response): array
-    {
-        $responseBody = $this->readStreamedResponseBody($response);
-        $singleResponseJsons = MultipleJsonsSplitter::splitToSingleJsons($responseBody);
-
-        $jsonObjects = [];
-        foreach ($singleResponseJsons as $singleResponseJson) {
-            $jsonObjects[] = $this->parseToJsonObject($singleResponseJson, $response);
+    private static function getResponseEvents(string $responseBody, string $contentType, int $statusCode): array {
+        try {
+            return CloudEventsSerializer::deserialize($responseBody, $contentType);
+        } catch (Exception $ex) {
+            throw new StreamxClientException(
+                "Error while parsing body of response with HTTP status $statusCode. " . $ex->getMessage(), $ex);
         }
-        return $jsonObjects;
     }
 
-    private function readStreamedResponseBody(ResponseInterface $response): string
-    {
-        $responseBody = '';
-        $bodyReader = $response->getBody();
-        while (!$bodyReader->eof()) {
-            $responseBody .= $bodyReader->read(1024);
-        }
-        return $responseBody;
-    }
-
-    private function streamxClientExceptionFrom(FailureResponse $failureResponse): StreamxClientException
-    {
-        return StreamxClientExceptionFactory::create(
-            $failureResponse->getErrorCode(),
-            $failureResponse->getErrorMessage()
-        );
-    }
-
-    /**
-     * @throws StreamxClientException
-     */
-    private function parseToJsonObject(string $json, ResponseInterface $response)
-    {
-        $jsonObject = json_decode($json);
-        if (json_last_error() !== JSON_ERROR_NONE) {
-            throw new StreamxClientException(sprintf('Communication error. Response status: %s. Message: %s',
-                $response->getStatusCode(), 'Response could not be parsed.'));
-        }
-        return $jsonObject;
-    }
-
-    private static function createAuthenticationException(): StreamxClientException
-    {
-        return new StreamxClientException('Authentication failed. Make sure that the given token is valid.');
-    }
-
-    private static function createGenericCommunicationException(ResponseInterface $response): StreamxClientException
-    {
-        return new StreamxClientException(
-            sprintf('Communication error. Response status: %s. Message: %s',
-                $response->getStatusCode(),
-                $response->getReasonPhrase()));
-    }
 }

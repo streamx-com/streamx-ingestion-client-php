@@ -2,6 +2,7 @@
 
 namespace Streamx\Clients\Ingestion\Publisher;
 
+use CloudEvents\V1\CloudEventInterface;
 use Streamx\Clients\Ingestion\Exceptions\StreamxClientException;
 
 /**
@@ -10,51 +11,28 @@ use Streamx\Clients\Ingestion\Exceptions\StreamxClientException;
 abstract class Publisher
 {
     /**
-     * Performs ingestion endpoint `publish` command.
-     * @param string $key Publish key.
-     * @param array|object $payload Publish payload.
-     * @param array $additionalRequestOptions Additional request options. Optional.
-     *     With default implementation, the supported options are: https://docs.guzzlephp.org/en/stable/request-options.html
-     * @return SuccessResult containing ingestion endpoint response entity.
-     * @throws StreamxClientException if command failed.
-     */
-    public final function publish(string $key, $payload, array $additionalRequestOptions = []): SuccessResult
-    {
-        $message = (Message::newPublishMessage($key, $payload))->build();
-        return $this->send($message, $additionalRequestOptions);
-    }
-
-    /**
-     * Performs ingestion endpoint `unpublish` command.
-     * @param string $key Unpublish key.
-     * @param array $additionalRequestOptions Additional request options. Optional.
-     *     With default implementation, the supported options are: https://docs.guzzlephp.org/en/stable/request-options.html
-     * @return SuccessResult containing ingestion endpoint response entity.
-     * @throws StreamxClientException if command failed.
-     */
-    public final function unpublish(string $key, array $additionalRequestOptions = []): SuccessResult
-    {
-        $message = (Message::newUnpublishMessage($key))->build();
-        return $this->send($message, $additionalRequestOptions);
-    }
-
-    /**
-     * Sends the provided ingestion message to the Ingestion endpoint.
-     * @param Message $message Ingestion message.
+     * Ingestion endpoint command.
+     * Sends a single CloudEvents for ingestion.
+     *
+     * @param CloudEventInterface $cloudEvent CloudEvent payload
      * @param array $additionalRequestOptions Additional request options. Optional.
      *    With default implementation, the supported options are: https://docs.guzzlephp.org/en/stable/request-options.html
-     * @return SuccessResult containing ingestion endpoint response entity.
-     * @throws StreamxClientException If command filed.
+     * @return CloudEventInterface containing ingestion success information.
+     *    Ingestion failure of any kind causes {@link StreamxClientException}.
+     * @throws StreamxClientException If command failed.
      */
-    public abstract function send(Message $message, array $additionalRequestOptions = []): SuccessResult;
+    public abstract function send(CloudEventInterface $cloudEvent, array $additionalRequestOptions = []): CloudEventInterface;
 
     /**
-     * Sends the provided ingestion messages to the Ingestion endpoint.
-     * @param Message[] $messages Ingestion messages.
+     * Ingestion endpoint command.
+     * Sends a list of CloudEvents for ingestion
+     *
+     * @param CloudEventInterface[] $cloudEvents CloudEvents list payload
      * @param array $additionalRequestOptions Additional request options. Optional.
      *    With default implementation, the supported options are: https://docs.guzzlephp.org/en/stable/request-options.html
-     * @return MessageStatus[] with SuccessResult and/or FailureResponse from ingestion endpoint for each input message (in order).
-     * @throws StreamxClientException If a critical error occurred and the MessageStatus[] with SuccessResult and/or FailureResponse cannot be returned.
+     * @return CloudEventInterface[] containing ingestion success information of each sent CloudEvent.
+     *    Ingestion failure of any kind, of any given event, causes {@link StreamxClientException}.
+     * @throws StreamxClientException If command failed.
      */
-    public abstract function sendMulti(array $messages, array $additionalRequestOptions = []): array;
+    public abstract function sendMulti(array $cloudEvents, array $additionalRequestOptions = []): array;
 }

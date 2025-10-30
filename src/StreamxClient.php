@@ -10,16 +10,14 @@ use Streamx\Clients\Ingestion\Publisher\Publisher;
 interface StreamxClient
 {
     /**
-     * StreamX REST Ingestion base path.
+     * StreamX REST Ingestion relative path.
      */
-    public const INGESTION_ENDPOINT_BASE_PATH = '/ingestion/v1';
+    public const INGESTION_ENDPOINT_PATH = '/ingestion/v2/cloudevents';
 
     /**
      * Creates new {@link Publisher} instance.
-     * @param string $channel Ingestion channel name.
-     * @param string $channelSchemaName Fully qualified name of the Ingestion channel schema.
      * @return Publisher
      */
-    public function newPublisher(string $channel, string $channelSchemaName): Publisher;
+    public function newPublisher(): Publisher;
 
 }

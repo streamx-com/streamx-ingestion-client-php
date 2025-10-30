@@ -2,59 +2,44 @@
 
 namespace Streamx\Clients\Ingestion\Tests\Testing;
 
+use CloudEvents\V1\CloudEventInterface;
 use donatj\MockWebServer\Response;
-use Streamx\Clients\Ingestion\Publisher\FailureResponse;
-use Streamx\Clients\Ingestion\Publisher\MessageStatus;
-use Streamx\Clients\Ingestion\Publisher\SuccessResult;
+use Streamx\Clients\Ingestion\Utils\CloudEventsSerializer;
 
 class StreamxResponse
 {
-    public static function success(int $eventTime, string $key): Response
+    public static function success(CloudEventInterface $event): Response
     {
-        $successResult = new SuccessResult($eventTime, $key);
-        $messageStatus = MessageStatus::ofSuccess($successResult);
-        $json = json_encode($messageStatus);
-        return self::create202Response($json);
-    }
-
-    public static function failure(int $statusCode, string $errorCode, string $errorMessage): Response
-    {
-        $failureResponse = new FailureResponse($errorCode, $errorMessage);
-        $json = json_encode($failureResponse);
-        return self::custom($statusCode, $json, ['Content-Type' => 'application/json']);
-    }
-
-    public static function successResultWithFailure(string $errorCode, string $errorMessage): Response
-    {
-        $failureResponse = new FailureResponse($errorCode, $errorMessage);
-        $messageStatus = MessageStatus::ofFailure($failureResponse);
-        $json = json_encode($messageStatus);
-        return self::create202Response($json);
+        return self::successes([$event]);
     }
 
     /**
-     * @param $messageResponses array of SuccessResult and/or FailureResponse $messageResponses
+     * @param CloudEventInterface[] $events
      */
-    public static function responseForMultipleMessages(array $messageResponses): Response
+    public static function successes(array $events): Response
     {
-        $jsons = [];
-        foreach ($messageResponses as $messageResponse) {
-            if ($messageResponse instanceof SuccessResult) {
-                $jsons[] = json_encode(MessageStatus::ofSuccess($messageResponse));
-            } else if ($messageResponse instanceof FailureResponse) {
-                $jsons[] = json_encode(MessageStatus::ofFailure($messageResponse));
-            }
-        }
-        return self::create202Response(implode("\n", $jsons));
+        return self::responseWithCloudEvents(202, $events);
     }
 
-    public static function custom(int $statusCode, string $body, array $headers = []): Response
+    /**
+     * @param CloudEventInterface[] $events
+     */
+    public static function responseWithCloudEvents(int $statusCode, array $events): Response
     {
-        return new Response($body, $headers, $statusCode);
+        $serializedEvents = CloudEventsSerializer::serialize($events);
+        return new Response(
+            $serializedEvents->getJson(),
+            ['Content-Type' => $serializedEvents->getContentType()],
+            $statusCode
+        );
     }
 
-    public static function create202Response($body): Response
+    public static function failure(int $statusCode, string $responseText): Response
     {
-        return self::custom(202, $body);
+        return new Response(
+            $responseText,
+            ['Content-Type' => 'text/plain'],
+            $statusCode
+        );
     }
 }
