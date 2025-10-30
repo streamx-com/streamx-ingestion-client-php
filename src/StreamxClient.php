@@ -10,7 +10,7 @@ use Streamx\Clients\Ingestion\Publisher\Publisher;
 interface StreamxClient
 {
     /**
-     * StreamX REST Ingestion relative path.
+     * StreamX REST Ingestion path.
      */
     public const INGESTION_ENDPOINT_PATH = '/ingestion/v2/cloudevents';
 
