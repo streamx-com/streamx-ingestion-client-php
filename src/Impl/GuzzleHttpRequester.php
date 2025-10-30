@@ -27,7 +27,7 @@ class GuzzleHttpRequester implements HttpRequester
 
     public function post(UriInterface $endpointUri, array $headers, array $cloudEvents, array $additionalRequestOptions = []): array {
         try {
-            $serializedEvents =  CloudEventsSerializer::serialize($cloudEvents);
+            $serializedEvents = CloudEventsSerializer::serialize($cloudEvents);
             $headers = array_merge($headers, [self::CONTENT_TYPE_HEADER => $serializedEvents->getContentType()]);
 
             $requestOptions = array_merge(
