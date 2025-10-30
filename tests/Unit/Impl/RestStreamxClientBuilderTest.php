@@ -25,11 +25,11 @@ class RestStreamxClientBuilderTest extends MockServerTestCase
         $page = new Page('test');
         $event = CloudEventUtils::pagePublishEvent('key', $page, 836383);
 
-        self::$server->setResponseOfPath('/custom-ingestion/v1',
+        self::$server->setResponseOfPath('/custom-ingestion/v2',
             StreamxResponse::success($event));
 
         $this->client = StreamxClientBuilders::create(self::$server->getServerRoot())
-            ->setIngestionEndpointPath('/custom-ingestion/v1')
+            ->setIngestionEndpointPath('/custom-ingestion/v2')
             ->build();
 
         // When
@@ -37,7 +37,7 @@ class RestStreamxClientBuilderTest extends MockServerTestCase
 
         // Then
         $this->assertIngestionRequest(self::$server->getLastRequest(),
-            '/custom-ingestion/v1',
+            '/custom-ingestion/v2',
             [$event]);
 
         CloudEventsComparator::assertSameEvents($result, $event);
