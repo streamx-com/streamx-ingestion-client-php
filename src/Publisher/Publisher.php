@@ -12,7 +12,7 @@ abstract class Publisher
 {
     /**
      * Ingestion endpoint command.
-     * Sends a single CloudEvents for ingestion.
+     * Sends a single CloudEvent for ingestion.
      *
      * @param CloudEventInterface $cloudEvent CloudEvent payload
      * @param array $additionalRequestOptions Additional request options. Optional.
@@ -25,7 +25,7 @@ abstract class Publisher
 
     /**
      * Ingestion endpoint command.
-     * Sends a list of CloudEvents for ingestion
+     * Sends a list of CloudEvents for ingestion.
      *
      * @param CloudEventInterface[] $cloudEvents CloudEvents list payload
      * @param array $additionalRequestOptions Additional request options. Optional.
