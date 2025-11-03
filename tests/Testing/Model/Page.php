@@ -4,10 +4,10 @@ namespace Streamx\Clients\Ingestion\Tests\Testing\Model;
 
 class Page
 {
-    public Content $content;
+    public string $content;
 
-    public function __construct(Content $content)
+    public function __construct(string $content)
     {
-        $this->content = $content;
+        $this->content = base64_encode($content);
     }
 }

@@ -1,33 +1,49 @@
-defaultRegistry: ghcr.io/streamx-dev/streamx-blueprints
-defaultImageTag: 1.0.1-jvm
+default:
+  image:
+    repository: ghcr.io/streamx-com/streamx-blueprints
+    tag: latest-jvm
 
 sources:
-  connector:
+  pages-source:
     outgoing:
-      - "pages"
+      - ref: "inbox.pages"
+        produces:
+          - "com.streamx.blueprints.page.published.v1"
+          - "com.streamx.blueprints.page.unpublished.v1"
+
+descriptors:
+  web-server-sink:
+    type: "edge"
+    incoming:
+      resources:
+        binding: "http-structured-json"
 
 ingestion:
   rest-ingestion:
-    environment:
-      QUARKUS_HTTP_AUTH_PERMISSION_BEARER_POLICY: "permit"
+    containers:
+      - environment:
+          QUARKUS_HTTP_AUTH_PERMISSION_BEARER_POLICY: permit
 
 processing:
-  blueprint-relay-pages:
-    image: relay-processing-service
-    incoming:
-      messages:
-        topic: inboxes/pages
-    outgoing:
-      relayed-messages:
-        topic: outboxes/pages
-    environment:
-      MP_MESSAGING_INCOMING_MESSAGES_SCHEMA: "page-schema"
-      MP_MESSAGING_OUTGOING_RELAYED-MESSAGES_SCHEMA: "page-schema"
+  pages-relay:
+    containers:
+      - incoming:
+          incoming-pages:
+            ref: inbox.pages
+        outgoing:
+          outgoing-pages:
+            ref: outbox.pages
+        environment:
+          STREAMX_PROXY_CONFIG_RELAY_ENABLED: "true"
 
-delivery:
-  blueprint-web:
-    image: web-delivery-service
-    incoming:
-      pages:
-        topic: outboxes/pages
-    port: 8081
+edge:
+  blueprint-web-server-sink:
+    containers:
+      - image: web-server-sink
+        incoming:
+          resources:
+            ref: outbox.pages
+        ports:
+          - "8081:8080"
+        environment:
+          STREAMX_DELIVERY_SERVICE_READINESS_CHECK_ENABLED: "false"

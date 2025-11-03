@@ -2,18 +2,17 @@
 
 namespace Streamx\Clients\Ingestion\Tests\Testing;
 
+use CloudEvents\V1\CloudEventInterface;
 use donatj\MockWebServer\MockWebServer;
 use donatj\MockWebServer\RequestInfo;
 use PHPUnit\Framework\TestCase;
 use Streamx\Clients\Ingestion\Builders\StreamxClientBuilders;
 use Streamx\Clients\Ingestion\Publisher\Publisher;
 use Streamx\Clients\Ingestion\StreamxClient;
+use Streamx\Clients\Ingestion\Utils\CloudEventsSerializer;
 
 class MockServerTestCase extends TestCase
 {
-    private const PAGES_SCHEMA_NAME = 'dev.streamx.data.model.PageIngestionMessage';
-    private const DUMMY_SCHEMA_NAME = 'dev.streamx.data.model.DummyIngestionMessage';
-
     protected static MockWebServer $server;
     protected StreamxClient $client;
 
@@ -21,7 +20,6 @@ class MockServerTestCase extends TestCase
     {
         self::$server = new MockWebServer();
         self::$server->start();
-        self::$server->setDefaultResponse(StreamxResponse::success(-1, 'any'));
     }
 
     protected function setUp(): void
@@ -34,36 +32,26 @@ class MockServerTestCase extends TestCase
         self::$server->stop();
     }
 
-    protected function createPagesPublisher() : Publisher
+    protected function createPublisher() : Publisher
     {
-        return $this->client->newPublisher("pages", self::PAGES_SCHEMA_NAME);
+        return $this->client->newPublisher();
     }
 
-    protected function createPublisherWithIrrelevantSchema(string $channel) : Publisher
-    {
-        return $this->client->newPublisher($channel, self::DUMMY_SCHEMA_NAME);
-    }
-
-    protected function defaultPublishMessageJson($key, $payload): string
-    {
-        return '{"key":"'.$key.'","action":"publish","eventTime":null,"properties":{},"payload":{"dev.streamx.data.model.Page":'.$payload.'}}';
-    }
-
-    protected function defaultUnpublishMessageJson($key): string
-    {
-        return '{"key":"'.$key.'","action":"unpublish","eventTime":null,"properties":{},"payload":null}';
-    }
-
+    /**
+     * @param CloudEventInterface[] $expectedCloudEvents
+     */
     protected function assertIngestionRequest(
         RequestInfo $request,
         string $uri,
-        string $expectedBody,
+        array $expectedCloudEvents,
         array $headers = null
     ): void {
+        $expectedSerializedEvents = CloudEventsSerializer::serialize($expectedCloudEvents);
+
         $this->assertEquals('POST', $request->getRequestMethod());
         $this->assertEquals($uri, $request->getRequestUri());
-        $this->assertEquals($expectedBody, $request->getInput());
-        $this->assertEquals('application/json; charset=UTF-8', $request->getHeaders()['Content-Type']);
+        $this->assertEquals($expectedSerializedEvents->getJson(), $request->getInput());
+        $this->assertEquals($expectedSerializedEvents->getContentType(), $request->getHeaders()['Content-Type']);
         $this->assertHeaders($request, $headers);
     }
 

@@ -5,7 +5,6 @@ namespace Streamx\Clients\Ingestion;
 use Psr\Http\Client\ClientInterface;
 use Streamx\Clients\Ingestion\Exceptions\StreamxClientException;
 use Streamx\Clients\Ingestion\Publisher\HttpRequester;
-use Streamx\Clients\Ingestion\Publisher\JsonProvider;
 
 /**
  * Builder for customized {@link StreamxClient} instances.
@@ -14,12 +13,12 @@ interface StreamxClientBuilder
 {
 
     /**
-     * Configures custom StreamX REST Ingestion base path. Default value is
-     * {@link StreamxClient::INGESTION_ENDPOINT_BASE_PATH}.
-     * @param string $ingestionEndpointBasePath StreamX REST Ingestion base path.
+     * Configures custom StreamX REST Ingestion endpoint path. Default value is
+     * {@link StreamxClient::INGESTION_ENDPOINT_PATH}.
+     * @param string $ingestionEndpointPath StreamX REST Ingestion endpoint path.
      * @return StreamxClientBuilder
      */
-    public function setIngestionEndpointBasePath(string $ingestionEndpointBasePath): StreamxClientBuilder;
+    public function setIngestionEndpointPath(string $ingestionEndpointPath): StreamxClientBuilder;
 
     /**
      * Configures authentication token.
@@ -43,13 +42,6 @@ interface StreamxClientBuilder
      * @return StreamxClientBuilder
      */
     public function setHttpClient(ClientInterface $httpClient): StreamxClientBuilder;
-
-    /**
-     * Configures custom {@link JsonProvider}.
-     * @param JsonProvider $jsonProvider Custom {@link JsonProvider}
-     * @return StreamxClientBuilder
-     */
-    public function setJsonProvider(JsonProvider $jsonProvider): StreamxClientBuilder;
 
     /**
      * Builds actual {@link StreamxClient} instance.

@@ -2,8 +2,8 @@
 
 namespace Streamx\Clients\Ingestion\Impl;
 
+use Psr\Http\Message\UriInterface;
 use Streamx\Clients\Ingestion\Publisher\HttpRequester;
-use Streamx\Clients\Ingestion\Publisher\JsonProvider;
 use Streamx\Clients\Ingestion\Publisher\Publisher;
 use Streamx\Clients\Ingestion\StreamxClient;
 
@@ -12,18 +12,15 @@ class RestStreamxClient implements StreamxClient
     private RestPublisherProvider $publisherProvider;
 
     public function __construct(
-        string $serverUrl,
-        string $ingestionEndpointBasePath,
+        UriInterface $ingestionEndpointUri,
         ?string $authToken,
-        HttpRequester $httpRequester,
-        JsonProvider $jsonProvider
+        HttpRequester $httpRequester
     ) {
-        $this->publisherProvider = new RestPublisherProvider($serverUrl, $ingestionEndpointBasePath, $authToken,
-            $httpRequester, $jsonProvider);
+        $this->publisherProvider = new RestPublisherProvider($ingestionEndpointUri, $authToken, $httpRequester);
     }
 
-    public function newPublisher(string $channel, string $channelSchemaName): Publisher
+    public function newPublisher(): Publisher
     {
-        return $this->publisherProvider->newPublisher($channel, $channelSchemaName);
+        return $this->publisherProvider->newPublisher();
     }
 }
