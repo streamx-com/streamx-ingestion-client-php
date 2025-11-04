@@ -6,7 +6,7 @@
 
 ## 🛠 Changes being made
 
-Here give description of the changes you've made in this pull request focusing on what is added or changed. 
+Here, you should describe the changes you've made in this pull request. Please focus on what is added or changed.
 
 For example:
 
@@ -15,6 +15,6 @@ For example:
 
 ## ✅ Checklist
 
-- [ ] My code follows the [code standards](https://github.com/streamx-dev/streamx/blob/main/CONTRIBUTING.md) of this project
+- [ ] My code follows the [code standards](https://github.com/streamx-com/streamx-service-mesh/blob/main/CONTRIBUTING.md) of this project
 - [ ] Changed code is covered with unit tests
-- [ ] I have updated READMEs and java docs (if applicable)
+- [ ] I have updated READMEs and Java docs (if applicable)
