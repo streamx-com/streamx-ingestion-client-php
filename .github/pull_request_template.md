@@ -12,9 +12,3 @@ For example:
 
 * **Breaking change**: `old-property` renamed to `new-property`.
 * **Non-braking change**: Added support for `new-feature`.
-
-## ✅ Checklist
-
-- [ ] My code follows the [code standards](https://github.com/streamx-com/streamx-service-mesh/blob/main/CONTRIBUTING.md) of this project
-- [ ] Changed code is covered with unit tests
-- [ ] I have updated READMEs and Java docs (if applicable)
