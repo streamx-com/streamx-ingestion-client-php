@@ -15,4 +15,4 @@ For example:
 
 ## ✅ Checklist
 - [ ] Changed code is covered with unit tests
-- [ ] I have updated READMEs and PHPDocs tags(if applicable)
+- [ ] I have updated READMEs and PHPDocs tags (if applicable)
