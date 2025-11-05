@@ -1,5 +1,5 @@
 {
-  "name": "streamx/ingestion-client",
+  "name": "streamx/ingestion-client-php",
   "description": "PHP ingestion client for StreamX - a Digital Experience Data Mesh.",
   "version": "2.0.2",
   "type": "library",
