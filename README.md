@@ -7,8 +7,7 @@ REST Ingestion Service.
 PHP 7.4 or higher
 
 # Compatibility
-* Versions 1.x are compatible with StreamX 1.x and StreamX Blueprints 2.x
-* Versions 2.x are compatible with StreamX 2.x and StreamX Blueprints 3.x
+The Client is compatible with StreamX 2.x and StreamX Blueprints 3.x
 
 # Main entry points:
 
@@ -77,7 +76,7 @@ The recommended way to install the client is through
 [Composer](https://getcomposer.org/).
 
 ```bash
-composer require streamx/ingestion-client
+composer require streamx/ingestion-client-php
 ```
 
 # Run tests with coverage
